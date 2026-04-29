@@ -1,0 +1,47 @@
+services:
+    # 1. Твой PHP-контейнер
+    app:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: tuta-app
+        volumes:
+            - .:/opt/TutaTeam
+        networks:
+            - tuta-net
+
+    # 2. Твой Nginx (с SSL и твоим портом 11443)
+    nginx:
+        image: nginx:stable-alpine
+        container_name: tuta-nginx
+        ports:
+            - "11443:443"
+            - "80:80"
+        volumes:
+            - .:/opt/TutaTeam
+            - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+            - ./docker/nginx/ssl:/etc/nginx/ssl:ro
+        depends_on:
+            - app
+        networks:
+            - tuta-net
+
+    # 3. Твоя база данных PostgreSQL
+    db:
+        image: postgres:15-alpine
+        container_name: tuta-db
+        environment:
+            POSTGRES_DB: postgresql
+            POSTGRES_USER: postgresql
+            POSTGRES_PASSWORD: postgresql
+        volumes:
+            - tuta-db-data:/var/lib/postgresql/data
+        networks:
+            - tuta-net
+
+networks:
+    tuta-net:
+        driver: bridge
+
+volumes:
+    tuta-db-data:
