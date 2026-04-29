@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Models\VideoDownload;
+use Illuminate\Support\Facades\Auth; // Добавили явный импорт
+use Illuminate\Support\Facades\Log;  // Добавили явный импорт
 
 class DownloadController extends Controller
 {
@@ -17,45 +20,48 @@ class DownloadController extends Controller
         $quality = $request->input('quality');
 
         $downloadDir = storage_path('app/public/downloads');
-        $tempName = \Illuminate\Support\Str::random(10);
+        $tempName = Str::random(10);
         $outputPath = $downloadDir . '/' . $tempName . '.%(ext)s';
 
         if ($format === 'mp3' || $format === 'wav') {
-            // ЛОГИКА АУДИО
             $params = "-x --audio-format $format --audio-quality 0";
         } else {
-            // ЛОГИКА ВИДЕО
             $hasAudio = str_contains($quality, '_audio');
             $height = str_replace(['_audio', '_noaudio'], '', $quality);
             $heightLimit = ($height === 'best') ? '2160' : $height;
 
             if ($hasAudio) {
-                // Видео + Звук
                 $params = "-f \"bestvideo[height<=$heightLimit][ext=$format]+bestaudio[ext=m4a]/best[ext=$format]/best\" --merge-output-format $format";
             } else {
-                // Только Видео (без звука)
                 $params = "-f \"bestvideo[height<=$heightLimit][ext=$format]/bestvideo[height<=$heightLimit]\"";
             }
         }
 
-        $command = "yt-dlp " . escapeshellarg($url) . " $params -o " . escapeshellarg($outputPath) . " --ffmpeg-location /usr/bin/ffmpeg 2>&1";
-        exec($command);
+        $command = "yt-dlp " . escapeshellarg($url) . " $params -o " . escapeshellarg($outputPath) . " -4 --no-check-certificate --ffmpeg-location /usr/bin/ffmpeg 2>&1";
+        exec($command, $output, $returnCode);
 
-        $videoTitle = shell_exec("yt-dlp --get-title --no-playlist " . escapeshellarg($url));
-        // Очищаем название от странных символов для файловой системы
-        $safeName = \Illuminate\Support\Str::slug(trim($videoTitle ?: 'video')) ?: 'TutaGlitch_file';
+        $videoTitle = shell_exec("yt-dlp -4 --no-check-certificate --get-title --no-playlist " . escapeshellarg($url));
+        $safeName = Str::slug(trim($videoTitle ?: 'video')) ?: 'TutaGlitch_file';
 
-        // 2. Ищем скачанный файл (наш временный cYYZJ...)
         $files = glob($downloadDir . '/' . $tempName . '.*');
 
         if (!empty($files)) {
-            $filePath = $files[0]; // Берем первый найденный файл
-            $extension = pathinfo($filePath, PATHINFO_EXTENSION); // Получаем расширение (mp4, mp3 и т.д.)
-
-            // Формируем красивое имя: Название_Видео.расширение
+            $filePath = $files[0];
+            $extension = pathinfo($filePath, PATHINFO_EXTENSION);
             $finalFileName = $safeName . '.' . $extension;
 
-            // Отдаем пользователю с КРАСИВЫМ именем
+            // 👇 ПРОВЕРЯЕМ СЕССИЮ ПЕРЕД СОХРАНЕНИЕМ И ПИШЕМ В ЛОГ
+            $userId = Auth::id();
+            Log::info("Скачивание начато. ID авторизованного пользователя: " . ($userId ?? 'NULL (Гость)'));
+
+            VideoDownload::create([
+                'user_id' => $userId, // Сохранится ID пользователя или null
+                'url' => $url,
+                'title' => trim($videoTitle) ?: 'Видео без названия',
+                'quality' => $quality,
+                'format' => $format,
+            ]);
+
             return response()->download($filePath, $finalFileName)->deleteFileAfterSend(true);
         }
 

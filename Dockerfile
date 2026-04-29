@@ -11,7 +11,9 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     ffmpeg \
-    yt-dlp
+    yt-dlp \
+    nodejs \
+    npm
 
 RUN docker-php-ext-install pdo_pgsql gd zip
 
